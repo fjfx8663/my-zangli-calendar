@@ -1,3 +1,4 @@
+# Generated automatically by GitHub Actions
 import os
 from datetime import date, timedelta, datetime
 try:
