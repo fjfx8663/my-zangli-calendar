@@ -16,17 +16,31 @@ END_YEAR = 2035
 # 【升级版格式】：用方括号 [...] 包裹当天的所有事件，中间用逗号隔开
 # （如果你以后不小心忘了加方括号，直接写成了一行字符串，程序也能智能识别，不会报错！）
 CUSTOM_EVENTS = {
-    "一月初一": ["🎉 藏历新年 (Losar)"],
-    "四月十五": ["☸️ 萨嘎达瓦节"],
-    
-    # 👇 看这里：六月初四现在被分成了两个独立的事件！
+    "一月初一": ["🎉 藏历新年（Losar）"],
+    "四月十五": ["☸️ 萨嘎达瓦节（纪念佛陀诞生、成道与涅槃）"],
     "六月初四": [
-        "🏔️ 佛陀初转法轮日", 
-        "🎂 索达吉堪布生日"
+        "🌟 明净月·佛转法轮日（纪念佛陀于鹿野苑初转法轮）",
+        "🎂 索达吉堪布生日",
     ],
-    
-    "九月廿二": ["🕊️ 降凡节"],
+    "九月廿二": ["🕊️ 天降节（纪念佛陀从三十三天重返人间）"],
     "十月廿五": ["🕯️ 燃灯节"],
+}
+
+MONTHLY_EVENTS = {
+    "初八": ["💊 药师佛加持日（功德增盛三百倍）"],
+    "初十": ["🪷 莲花生大士荟供日（功德增盛百倍）"],
+    "十五": ["🌕 阿弥陀佛加持日（诵戒净障，功德增盛百倍）"],
+    "二十": ["🙏 观世音菩萨加持日（功德增盛百倍）"],
+    "廿一": ["🌏 地藏王菩萨加持日"],
+    "廿五": ["🪶 一切空行母荟供日"],
+    "廿九": ["🛡️ 护法与忏悔日"],
+    "三十": ["🪷 释迦牟尼佛加持日（诵戒忏净，功德增盛九百倍）"],
+}
+
+MIRACLE_FESTIVAL_DAYS = {
+    "初一", "初二", "初三", "初四", "初五",
+    "初六", "初七", "初八", "初九", "初十",
+    "十一", "十二", "十三", "十四", "十五",
 }
 
 SHOW_DAILY_DATE = False
@@ -84,11 +98,13 @@ def generate_ics():
             events_today = []
             for date_key, names in CUSTOM_EVENTS.items():
                 if clean_date == date_key.replace("正月", "一月"):
-                    # 兼容多条和单条的写法
-                    if isinstance(names, list):
-                        events_today.extend(names)
-                    else:
-                        events_today.append(names)
+                    events_today.extend(names if isinstance(names, list) else [names])
+
+            lunar_day = clean_date.split("月", 1)[-1]
+            events_today.extend(MONTHLY_EVENTS.get(lunar_day, []))
+            if clean_date.startswith("一月") and lunar_day in MIRACLE_FESTIVAL_DAYS:
+                festival_name = "✨ 神变节正日（善恶业增盛十亿倍）" if lunar_day == "十五" else "✨ 神变节（正月初一至十五，善恶业增盛十亿倍）"
+                events_today.append(festival_name)
             
             dtstart = current_date.strftime("%Y%m%d")
             next_date = current_date + timedelta(days=1)
@@ -98,7 +114,7 @@ def generate_ics():
                 for index, event_name in enumerate(events_today):
                     # 加上 index 序号，确保同一天的多个事件都能独立生成色块，不互相覆盖
                     uid = f"zangli-{dtstart}-{index}@mycalendar"
-                    summary = f"{event_name} (${short_zangli_str})"
+                    summary = f"{event_name} ({short_zangli_str})"
                     
                     ics_lines.extend([
                         "BEGIN:VEVENT",
