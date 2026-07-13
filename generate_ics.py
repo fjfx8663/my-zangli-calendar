@@ -1,5 +1,6 @@
 # Generated automatically by GitHub Actions
 import os
+from concurrent.futures import ProcessPoolExecutor
 from datetime import date, timedelta, datetime
 try:
     from tyme4py.solar import SolarDay
@@ -32,6 +33,21 @@ SHOW_DAILY_DATE = False
 
 # ==================================================
 
+def get_zangli_date(current_date):
+    """Convert one Gregorian date in a separate worker process.
+
+    tyme4py's Tibetan-calendar conversion is comparatively expensive. Keeping
+    this helper at module level makes it picklable for ProcessPoolExecutor and
+    lets the GitHub Actions runner use all available CPU cores.
+    """
+    try:
+        solar = SolarDay.from_ymd(
+            current_date.year, current_date.month, current_date.day
+        )
+        return current_date, str(solar.get_rab_byung_day())
+    except Exception:
+        return current_date, None
+
 def generate_ics():
     ics_lines = [
         "BEGIN:VCALENDAR",
@@ -47,12 +63,21 @@ def generate_ics():
     end_date = date(END_YEAR, 12, 31)
     dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     
+    dates = []
     while current_date <= end_date:
-        try:
-            solar = SolarDay.from_ymd(current_date.year, current_date.month, current_date.day)
-            zangli = solar.get_rab_byung_day()
-            zangli_str = str(zangli) 
-            
+        dates.append(current_date)
+        current_date += timedelta(days=1)
+
+    # A serial conversion of 12 years takes longer than the GitHub Actions
+    # timeout. executor.map keeps the output ordered, so the ICS file remains
+    # deterministic while conversions run in parallel.
+    workers = os.cpu_count() or 1
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        zangli_dates = executor.map(get_zangli_date, dates, chunksize=16)
+        for current_date, zangli_str in zangli_dates:
+            if zangli_str is None:
+                continue
+
             short_zangli_str = zangli_str.split("年")[-1] if "年" in zangli_str else zangli_str
             clean_date = short_zangli_str.replace("闰", "").replace("正月", "一月")
             
@@ -73,7 +98,7 @@ def generate_ics():
                 for index, event_name in enumerate(events_today):
                     # 加上 index 序号，确保同一天的多个事件都能独立生成色块，不互相覆盖
                     uid = f"zangli-{dtstart}-{index}@mycalendar"
-                    summary = f"{event_name} ({short_zangli_str})"
+                    summary = f"{event_name} (${short_zangli_str})"
                     
                     ics_lines.extend([
                         "BEGIN:VEVENT",
@@ -82,7 +107,7 @@ def generate_ics():
                         f"DTSTART;VALUE=DATE:{dtstart}",
                         f"DTEND;VALUE=DATE:{dtend}",
                         f"SUMMARY:{summary}",
-                        f"DESCRIPTION:公历 {current_date.strftime('%Y-%m-%d')}\\n完整藏历: {zangli_str}\\n\\n(Data Powered by stonelf/zangli)",
+                        f"DESCRIPTION:公历 {current_date.strftime('%Y-%m-%d')}\n完整藏历: {zangli_str}\n\n(Data Powered by stonelf/zangli)",
                         "TRANSP:TRANSPARENT",
                         "END:VEVENT"
                     ])
@@ -96,16 +121,10 @@ def generate_ics():
                     f"DTSTART;VALUE=DATE:{dtstart}",
                     f"DTEND;VALUE=DATE:{dtend}",
                     f"SUMMARY:{summary}",
-                    f"DESCRIPTION:公历 {current_date.strftime('%Y-%m-%d')}\\n完整藏历: {zangli_str}\\n\\n(Data Powered by stonelf/zangli)",
+                    f"DESCRIPTION:公历 {current_date.strftime('%Y-%m-%d')}\n完整藏历: {zangli_str}\n\n(Data Powered by stonelf/zangli)",
                     "TRANSP:TRANSPARENT",
                     "END:VEVENT"
                 ])
-                
-        except Exception:
-            pass
-            
-        current_date += timedelta(days=1)
-        
     ics_lines.append("END:VCALENDAR")
     
     with open("zangli.ics", "w", encoding="utf-8", newline="") as f:
